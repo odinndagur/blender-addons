@@ -20,13 +20,28 @@ PROPS = [
 ]
 
 # == UTILS
-def generate_terrain_mesh(row,col):
+def generate_collider(obj):
+    obj.select_set(True)
+    bpy.ops.object.duplicate_move(OBJECT_OT_duplicate={"linked":False, "mode":'TRANSLATION'}, TRANSFORM_OT_translate={"value":(0, 0, 0), "orient_axis_ortho":'X', "orient_type":'GLOBAL', "orient_matrix":((1, 0, 0), (0, 1, 0), (0, 0, 1)), "orient_matrix_type":'GLOBAL', "constraint_axis":(False, False, False), "mirror":False, "use_proportional_edit":False, "proportional_edit_falloff":'SMOOTH', "proportional_size":1, "use_proportional_connected":False, "use_proportional_projected":False, "snap":False, "snap_target":'CLOSEST', "snap_point":(0, 0, 0), "snap_align":False, "snap_normal":(0, 0, 0), "gpencil_strokes":False, "cursor_transform":False, "texture_space":False, "remove_on_cancel":False, "view2d_edge_pan":False, "release_confirm":False, "use_accurate":False, "use_automerge_and_split":False})
+    current_name = obj.name
+    if 'collider' in current_name:
+        return
+    else:
+        new_name = current_name + '_collider'
+    obj.name = new_name
+    obj.modifiers.new('Decimate','DECIMATE')
+    obj.modifiers["Decimate"].ratio = 0.05
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier="Decimate")
+    # obj.modifier_apply(modifier="Decimate")
+
+def get_heights_old():
     heightcsv = {
-    'brh': '/Users/odinndagur/Blender/2022/islandsdem-modular-heightmap/brh.csv',
-    'tif1': '/Users/odinndagur/Blender/2022/islandsdem-modular-heightmap/tif1heightmap.csv'
+        'brh': '/Users/odinndagur/Blender/2022/islandsdem-modular-heightmap/brh.csv',
+        'tif1': '/Users/odinndagur/Blender/2022/islandsdem-modular-heightmap/tif1heightmap.csv'
     }
     heights = []
-    with open(heightcsv['brh']) as f:
+    with open(heightcsv['tif1']) as f:
         for line in f.readlines()[1:]:
             arr = []
             for val in line.split(',')[1:]:
@@ -36,7 +51,30 @@ def generate_terrain_mesh(row,col):
                     arr.append(0.0)
 
             heights.append(arr)
-    print(len(heights))
+    return heights
+
+
+def get_heights_new():
+    from osgeo import gdal, gdal_array
+    import numpy as np
+    import pandas as pd
+    import os
+    from io import StringIO
+    print('get_heights_new byrjun')
+    heights = []
+    filepath = '/Users/odinndagur/Blender/2022/islandsdem-modular-heightmap/data/raw/IslandsDEMv1.0_2x2m_zmasl_isn2016_57.tif' # testa með heilu 25k * 25k tif
+    rasterArray = gdal_array.LoadFile(filepath)
+    print('rasterarray buid')
+    raster = gdal.Open(filepath)
+    print('raster buid')
+    band = raster.GetRasterBand(1)
+    nodata = band.GetNoDataValue()
+    heights = np.ma.masked_equal(rasterArray, nodata)
+    return heights
+
+def generate_terrain_mesh(row,col):
+    heights = get_heights_old()
+
     w = 251
     h = 251
     scale = 1
@@ -80,7 +118,7 @@ def generate_terrain_mesh(row,col):
     new_object.select_set(True)
     new_object.location = (col*w*scale - scale*col,row*h*scale - scale*row,0)
     bpy.ops.view3d.view_selected(use_all_regions=False)
-    
+
 # == OPERATORS
 class TerrainMeshGenerator(bpy.types.Operator):
     
@@ -92,6 +130,16 @@ class TerrainMeshGenerator(bpy.types.Operator):
             for j in range(context.scene.col_count):
                 generate_terrain_mesh(i,j)
             
+        return {'FINISHED'}
+
+class MeshColliderGenerator(bpy.types.Operator):
+    
+    bl_idname = 'opr.object_collider_generator'
+    bl_label = 'Mesh collider generator'
+    
+    def execute(self, context):
+        for obj in bpy.context.selected_objects:
+            generate_collider(obj)
         return {'FINISHED'}
 
 # == PANELS
@@ -109,11 +157,13 @@ class TerrainGeneratorPanel(bpy.types.Panel):
             row.prop(context.scene, prop_name)
             
         col.operator('opr.object_terrain_generator', text='Generate terrain')
+        col.operator('opr.object_collider_generator', text='Generate collider')
 
 # == MAIN ROUTINE
 CLASSES = [
     TerrainMeshGenerator,
     TerrainGeneratorPanel,
+    MeshColliderGenerator,
 ]
 
 def register():
